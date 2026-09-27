@@ -6,52 +6,79 @@ From the project root, after installing dependencies with `uv sync`:
 uv run python -m benchmarks.search_edit
 ```
 
-This script generates synthetic ASCII documents in memory; it reads no contract
-files and makes no network or AI requests. It tests 1 MiB and 10 MiB documents,
-each containing `thirty (30) days` twice: halfway through and at the end.
+The script creates synthetic ASCII documents of 1, 5, 10, and 20 MiB in memory.
+It reads no contract files and makes no network or AI requests.
 
-Search consumes all results, including their bounded context snippets. Edit
-validates and replaces only the first match with `sixty (60) days`, which is one
-character shorter. Every iteration checks the search positions and resulting
-text, including preservation of the second occurrence. Each edit starts from
-the same original text.
+## Cases and method
 
+Each size runs five cases:
+
+- **Sparse search:** find two occurrences of `thirty (30) days`, halfway through
+  the document and at its end. Consume all results and their context snippets.
+- **Absent search:** search the same document for `thirty (31) days`, which does
+  not occur. This requires reaching the end without finding a match.
+- **Single edit:** replace the first sparse match with `sixty (60) days`, one
+  character shorter. Each run starts from the same original document.
+- **Dense search:** consume every result from a separate document with one match
+  every 1,024 bytes. This produces 1,024–20,480 results as size increases.
+- **Capped search:** search that dense document through `DocumentStore.search`
+  with a limit of 50, as used by the API. It finds one extra match to confirm
+  truncation, then stops. This includes the store's snapshot lock and response
+  construction, but not HTTP or JSON serialization.
+
+Each case has one warm-up and seven measured runs using `time.perf_counter`.
 Fixture creation and correctness assertions are outside the timed sections.
-Each size has one warm-up and seven measured runs using `time.perf_counter`.
-The script reports the median, minimum, and maximum elapsed times.
+Every result is checked: match positions/counts, absence, exact edited text with
+its second occurrence preserved, or the result cap and truncation flag.
+The script reports median, minimum, and maximum elapsed times. ASCII makes byte
+and character counts equal; the benchmark is not representative of all Unicode text.
 
 ## Recorded local run
 
 Measured September 27, 2026, with CPython 3.12.4 on macOS/Darwin 24.5.0,
-arm64 architecture. Times are milliseconds.
+arm64 architecture. Each MiB is 1,048,576 bytes. Table values are medians in
+milliseconds; rerun the script to see ranges on your machine.
 
-| Document size | Search median (min–max) | Edit median (min–max) |
-| --- | --- | --- |
-| 1 MiB / 1,048,576 bytes | 0.244 (0.178–0.551) | 0.190 (0.066–0.416) |
-| 10 MiB / 10,485,760 bytes | 1.778 (1.581–4.093) | 1.998 (1.646–4.171) |
+| Size | Sparse search | Absent search | Single edit | Dense, all matches | Dense, limit 50 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 MiB | 0.167 | 0.145 | 0.061 | 2.819 | 0.127 |
+| 5 MiB | 0.765 | 0.742 | 0.726 | 15.888 | 0.132 |
+| 10 MiB | 1.598 | 1.590 | 1.847 | 37.325 | 0.129 |
+| 20 MiB | 3.180 | 3.063 | 3.478 | 72.438 | 0.124 |
 
-These are observations from one local session, not a latency guarantee. Your
-results will vary with hardware, system load, Python version, text, and query.
-Two sizes and one sparse-match workload do not establish a universal complexity
-bound. This does not measure dense matches, concurrent requests, memory peaks,
-storage locks, HTTP/JSON serialization, browser rendering, or AI latency.
+From 10 to 20 MiB, sparse search grew about 1.99x, absent search 1.93x, edit
+1.88x, and uncapped dense search 1.94x. This is consistent with roughly linear
+growth over that interval for these inputs, not a proof of universal complexity.
+Other intervals vary: the 1 MiB edit is especially fast relative to larger edits.
+Allocation, cache effects, garbage collection, and system load can affect timings;
+this benchmark does not isolate their individual contributions.
+
+Dense searches take longer because they construct many result objects and
+snippets. The capped search stays around 0.12–0.13 ms because it reaches its 51st
+match early and stops, regardless of the remaining document length. This does
+not make every capped search constant-time: absent or late matches still require
+scanning much more text.
+
+These are observations from one local session, not latency guarantees. They do
+not measure peak memory, simultaneous users, multiple-document workloads,
+HTTP/JSON serialization, browser rendering, or AI latency. Timing thresholds are
+not test assertions; correctness failures stop the script, slow timings do not.
 
 ## Performance considerations
 
-Search uses Python's `str.find` to scan text without an index. The core iterator
-yields results one at a time; the API stops after its result limit plus one match
-to detect truncation. An absent query can still require scanning every document.
-Dense matches add result construction costs beyond scanning.
+Search uses Python's `str.find` without an index. The core iterator yields one
+match at a time, allowing the API to stop at its result limit. Fully consuming
+all matches, as the dense benchmark does, increases both time and result memory.
 
 Editing creates a new string using slices and concatenation. Copying the document
 takes time proportional to its length, and temporary strings increase memory
-use. This benchmark also retains an expected result for correctness checks, so
-its process memory would not directly represent the app's editing memory use.
-The API returns the complete edited text, adding serialization and transfer costs
-that this benchmark deliberately does not measure.
+use. The benchmark also retains expected results and fixtures for validation,
+so its process memory would not directly represent a single editing request.
+The API returns complete edited text, adding serialization and transfer costs
+outside these measurements.
 
-Scanning is straightforward for this small prototype. An index could help repeated
-searches across a larger corpus, but would need updating after edits; conventional
-word indexes also do not directly preserve arbitrary exact substring semantics.
-Streaming would require extra handling for matches spanning chunk boundaries
-and for context/offset tracking. Neither is implemented here.
+Scanning is straightforward for this prototype. An index could help repeated
+searches over a larger collection, but must be updated after edits; conventional
+word indexes do not directly preserve arbitrary exact substring semantics.
+Streaming requires handling matches spanning chunk boundaries and preserving
+context and offsets. Neither is implemented here.

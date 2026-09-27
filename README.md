@@ -1,4 +1,4 @@
-# Margin📝
+# Margin 📝
 
 By: Mira Mohan · September 27, 2026
 
@@ -78,6 +78,11 @@ version 1 is stale. An empty replacement deletes the selected text.
 
 ## Design and behavior
 
+`GET` routes read documents; `PATCH` updates part of an existing document.
+`POST /documents/{id}/suggest` is a separate action because it generates wording
+without changing the document. Keeping generation and saving separate makes
+user approval explicit.
+
 - **Search:** literal, case-sensitive, non-overlapping matches. Empty queries are
   rejected; no matches returns `{"matches":[],"truncated":false}`. Results default
   to 50 (maximum 100 across documents), with 60 context characters per side
@@ -116,33 +121,41 @@ Tests cover exact edits, deletion, boundaries, repeated text, Unicode, conflicts
 API errors, and a 10 MiB document. AI tests use mocks and need no key or network.
 A live suggestion with fictional text was also verified manually.
 
-On a local Python 3.12.4 / macOS arm64 run, a 10 MiB ASCII document with two matches
-took a median **1.778 ms to search** and **1.998 ms to edit** over seven measured
-runs. These measure core functions, excluding HTTP/JSON, rendering, and AI;
-they are observations, not latency guarantees. See [benchmark details](benchmarks/README.md).
+Benchmarks cover 1, 5, 10, and 20 MiB ASCII documents, with sparse, absent, and
+dense matches, plus the store's result limit. On a local Python 3.12.4 / macOS
+arm64 run, a 10 MiB document with two matches took a median **1.598 ms to search**
+and **1.847 ms to edit** over seven measured runs. At 20 MiB, returning all 20,480
+matches took **72.438 ms**; stopping at 50 early matches took **0.124 ms**.
+These exclude HTTP/JSON, rendering, and AI. They are observations, not latency
+guarantees or a proof of linear complexity. See [benchmark details](benchmarks/README.md).
 
 Search scans text with `str.find`; edits copy text into a new string, so larger
 documents cost more time and memory. Returning the full document adds transfer
-cost. No index or streaming is implemented. An index could help repeated searches
-over a larger collection, but must track edits and support exact substrings.
-Streaming would reduce memory needs but complicate matches and context spanning
-chunk boundaries.
+cost. No index or streaming is implemented. An in-memory inverted index could
+map words to document IDs and positions, narrowing repeated word searches to
+candidate documents. It would consume memory and need updating after each edit.
+Word lookup alone would not preserve arbitrary substring matching, so candidates
+would still need verification and some queries would need a scan. Streaming
+would reduce memory needs but complicate matches and context spanning chunk
+boundaries.
 
 ## Limitations
 
-- **Single edits only:** bulk replacement is not implemented. Each save changes
-  one occurrence in one document. A possible extension is to validate and save
-  several selected replacements together, rejecting the whole batch if any
-  target is invalid.
 - **In-memory storage:** edits disappear on restart. Run one server worker;
   locks do not coordinate separate processes. Version numbers detect stale
   edits but do not provide revision history or undo.
-- **Search and scale:** no index or streaming; documents are held in memory and
-  scanned directly. Search results are capped without pagination. The benchmark
-  covers a two-match synthetic workload, not production traffic, peak memory,
-  or sustained concurrent load; it does not establish a general scaling guarantee.
-- **Review scope:** the page compares the selected text with its replacement;
-  it does not produce a full-document redline. AI output is checked for structure,
-  not legal correctness or whether it fully follows the instruction.
+- **Search and scale:** search results are capped without pagination. Benchmarks
+  use synthetic documents and do not measure production traffic, peak memory,
+  or concurrent load; they do not establish a general scaling guarantee.
+- **AI validation:** output is checked for structure, not legal correctness or
+  whether it fully follows the instruction. Human review is still required.
 - **Local demo:** three fictional documents, with no file import, authentication,
-  or persistent storage. Production infrastructure is not implemented.
+  or production infrastructure.
+
+## Future enhancements
+
+- Select several matches within one document, review a shared replacement, and
+  save them together. Validate every target and the version before changing
+  anything; reject the whole batch if any check fails.
+- Preview proposed changes within the document, with additions and deletions
+  highlighted before saving.
