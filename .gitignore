@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local environment configuration (keep only placeholder examples in Git).
+.env.*
+!.env.example
+.DS_Store
+
+# Private source material belongs outside this repository.
+Clause_Finder_Agent_Handoff_PRIVATE.md
+private-context/
