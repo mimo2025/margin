@@ -1,8 +1,11 @@
 """Exercise HTTP validation and the search-to-edit contract with isolated state."""
 
+from unittest.mock import Mock
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core import DocumentError
 from app.main import create_app
 from app.models import (
     MAX_CONTEXT_CHARS,
@@ -10,6 +13,8 @@ from app.models import (
     MAX_REPLACEMENT_LENGTH,
     MAX_RESULTS,
     Document,
+    EditRequest,
+    Suggestion,
 )
 from app.store import DocumentStore
 
@@ -264,3 +269,106 @@ def test_unexpected_error_has_safe_structured_response(store, monkeypatch):
     assert_error(response, 500)
     assert response.json()["error"] == "Internal server error."
     assert "private_sentinel" not in response.text
+
+
+@pytest.fixture
+def mock_suggest(monkeypatch):
+    mock = Mock(return_value=Suggestion(replacement="Suggested"))
+    monkeypatch.setattr("app.main.suggest_replacement", mock)
+    return mock
+
+
+def suggestion_payload():
+    return {
+        "expected_version": 1,
+        "target": {"start": 2, "end": 7, "text": "Alpha"},
+        "instruction": "Rewrite the selected word.",
+    }
+
+
+def test_suggestion_uses_search_target_without_saving(client, store, mock_suggest):
+    before = store.get("agreement-a")
+    match = client.get(
+        "/documents/search", params={"q": "Alpha", "document_id": "agreement-a"}
+    ).json()["matches"][0]
+    response = client.post(
+        "/documents/agreement-a/suggest",
+        json={
+            "expected_version": match["version"],
+            "target": match["target"],
+            "instruction": "Rewrite the selected word.",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {"replacement": "Suggested"}
+    mock_suggest.assert_called_once_with("Alpha", "Rewrite the selected word.")
+    assert store.get("agreement-a") == before
+
+
+@pytest.mark.parametrize(
+    ("changes", "status_code"),
+    [
+        ({"expected_version": 2}, 409),
+        ({"target": {"start": 2, "end": 7, "text": "Wrong"}}, 409),
+        ({"target": {"start": 2, "end": 100, "text": "Alpha"}}, 422),
+        ({"instruction": ""}, 422),
+        ({"instruction": "x" * 1001}, 422),
+        ({"expected_version": True}, 422),
+    ],
+)
+def test_invalid_suggestion_request_never_calls_ai(
+    client, store, mock_suggest, changes, status_code
+):
+    before = store.get("agreement-a")
+    payload = suggestion_payload()
+    payload.update(changes)
+    response = client.post("/documents/agreement-a/suggest", json=payload)
+    assert_error(response, status_code)
+    mock_suggest.assert_not_called()
+    assert store.get("agreement-a") == before
+
+
+def test_suggestion_for_missing_document_never_calls_ai(client, mock_suggest):
+    response = client.post("/documents/missing/suggest", json=suggestion_payload())
+    assert_error(response, 404)
+    mock_suggest.assert_not_called()
+
+
+@pytest.mark.parametrize("status_code", [502, 503, 504])
+def test_suggestion_failure_does_not_change_document(client, store, mock_suggest, status_code):
+    before = store.get("agreement-a")
+    mock_suggest.side_effect = DocumentError("Suggestion failed.", status_code)
+    response = client.post("/documents/agreement-a/suggest", json=suggestion_payload())
+    assert_error(response, status_code)
+    assert store.get("agreement-a") == before
+
+
+def test_manual_edit_still_works_without_ai_configuration(client, store, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    before = store.get("agreement-a")
+    response = client.post("/documents/agreement-a/suggest", json=suggestion_payload())
+    assert_error(response, 503)
+    assert store.get("agreement-a") == before
+    saved = client.patch("/documents/agreement-a", json=edit_payload())
+    assert saved.status_code == 200
+    assert saved.json()["version"] == 2
+
+
+def test_edit_can_finish_during_suggestion_and_old_selection_cannot_be_saved(
+    client, store, mock_suggest
+):
+    def edit_during_suggestion(_selected_text, _instruction):
+        # This edit must be able to acquire the document lock while AI is working.
+        store.edit("agreement-a", EditRequest(**edit_payload()))
+        return Suggestion(replacement="Suggested")
+
+    mock_suggest.side_effect = edit_during_suggestion
+    response = client.post("/documents/agreement-a/suggest", json=suggestion_payload())
+    assert response.status_code == 200
+    after_edit = store.get("agreement-a")
+    assert after_edit.version == 2
+
+    payload = edit_payload()
+    payload["replacement"] = response.json()["replacement"]
+    assert_error(client.patch("/documents/agreement-a", json=payload), 409)
+    assert store.get("agreement-a") == after_edit

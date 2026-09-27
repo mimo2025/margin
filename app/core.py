@@ -40,10 +40,15 @@ def iter_matches(
         cursor = end  # Moving past the match deliberately excludes overlaps.
 
 
-def replace_target(text: str, target: Target, replacement: str) -> str:
-    """Replace exactly one validated span, allowing an empty replacement."""
+def validate_target(text: str, target: Target) -> None:
+    """Check a selected span without constructing or saving an updated document."""
     if not 0 <= target.start < target.end <= len(text):
         raise DocumentError("Target range must be nonempty and within the document.", 422)
     if text[target.start : target.end] != target.text:
         raise DocumentError("Target text does not match. Search again before saving.", 409)
+
+
+def replace_target(text: str, target: Target, replacement: str) -> str:
+    """Replace exactly one validated span, allowing an empty replacement."""
+    validate_target(text, target)
     return text[: target.start] + replacement + text[target.end :]

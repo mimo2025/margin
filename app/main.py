@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
-from app.core import DocumentError
+from app.core import DocumentError, validate_target
 from app.models import (
     MAX_CONTEXT_CHARS,
     MAX_QUERY_LENGTH,
@@ -15,9 +15,12 @@ from app.models import (
     EditRequest,
     ErrorResponse,
     SearchResponse,
+    Suggestion,
+    SuggestionRequest,
 )
 from app.sample_data import sample_documents
 from app.store import DocumentStore
+from app.suggestions import suggest_replacement
 
 
 def create_app(store: DocumentStore | None = None) -> FastAPI:
@@ -37,7 +40,9 @@ def create_app(store: DocumentStore | None = None) -> FastAPI:
 
     @api.exception_handler(DocumentError)
     async def document_error(_request: Request, exc: DocumentError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"error": str(exc), "code": exc.status_code})
+        return JSONResponse(
+            status_code=exc.status_code, content={"error": str(exc), "code": exc.status_code}
+        )
 
     @api.exception_handler(RequestValidationError)
     async def validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -59,7 +64,9 @@ def create_app(store: DocumentStore | None = None) -> FastAPI:
 
     @api.exception_handler(Exception)
     async def unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
-        return JSONResponse(status_code=500, content={"error": "Internal server error.", "code": 500})
+        return JSONResponse(
+            status_code=500, content={"error": "Internal server error.", "code": 500}
+        )
 
     @api.get("/documents", response_model=list[DocumentSummary])
     def list_documents() -> list[DocumentSummary]:
@@ -73,11 +80,34 @@ def create_app(store: DocumentStore | None = None) -> FastAPI:
         limit: int = Query(default=50, ge=1, le=MAX_RESULTS),
         context_chars: int = Query(default=60, ge=0, le=MAX_CONTEXT_CHARS),
     ) -> SearchResponse:
-        return documents.search(q, document_id=document_id, limit=limit, context_chars=context_chars)
+        return documents.search(
+            q, document_id=document_id, limit=limit, context_chars=context_chars
+        )
 
     @api.get("/documents/{document_id}", response_model=Document)
     def get_document(document_id: str) -> Document:
         return documents.get(document_id)
+
+    @api.post(
+        "/documents/{document_id}/suggest",
+        response_model=Suggestion,
+        responses={
+            502: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+            504: {"model": ErrorResponse},
+        },
+    )
+    def suggest_document(document_id: str, request: SuggestionRequest) -> Suggestion:
+        document = documents.get(document_id)
+        if request.expected_version != document.version:
+            raise DocumentError(
+                "Document version has changed. Search again before suggesting.", 409
+            )
+        validate_target(document.text, request.target)
+        selected_text = document.text[request.target.start : request.target.end]
+        # get() has released the lock. AI works from this immutable snapshot;
+        # PATCH must check the version again if the user later approves the suggestion.
+        return suggest_replacement(selected_text, request.instruction)
 
     @api.patch("/documents/{document_id}", response_model=Document)
     def edit_document(document_id: str, request: EditRequest) -> Document:

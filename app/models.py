@@ -6,6 +6,7 @@ MAX_QUERY_LENGTH = 1_000
 MAX_REPLACEMENT_LENGTH = 10_000
 MAX_RESULTS = 100
 MAX_CONTEXT_CHARS = 200
+MAX_INSTRUCTION_LENGTH = 1_000
 
 
 class ApiModel(BaseModel):
@@ -54,3 +55,13 @@ class SearchResponse(ApiModel):
 class ErrorResponse(ApiModel):
     error: str
     code: int
+
+
+class SuggestionRequest(ApiModel):
+    expected_version: int = Field(ge=1)
+    target: Target
+    instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LENGTH)
+
+
+class Suggestion(ApiModel):
+    replacement: str = Field(max_length=MAX_REPLACEMENT_LENGTH)
