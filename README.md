@@ -21,8 +21,9 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 Open [the app](http://127.0.0.1:8000/) or [interactive API docs](http://127.0.0.1:8000/docs).
 Search for `thirty (30) days` to try the repeated-text example.
 
-For AI suggestions, copy `.env.example` to `.env` if you do not already have one,
-set `OPENAI_API_KEY` locally, then start the server with:
+For AI suggestions, copy `.env.example` to `.env` if you do not already have one
+and set `OPENAI_API_KEY` locally. Stop the running server with `Ctrl+C`, then
+restart it with the environment file (this resets the sample documents):
 
 ```bash
 uv run --env-file .env uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -93,7 +94,7 @@ user approval explicit.
 - **Saving:** `PATCH` applies a partial edit. The server checks the version,
   range, and original text under a per-document lock, then saves and increments
   the version once. Failed checks leave the document unchanged.
-- **AI:** `POST /suggest` sends only the selected text and instruction. It returns
+- **AI:** `POST /documents/{id}/suggest` sends only the selected text and instruction. It returns
   validated wording, has a configured 15-second SDK timeout and no automatic
   retries, and never saves. No document lock is held during the call. Saving
   afterward checks the version again. Suggestions still need human review.
