@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Margin</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="page-header">
+    <a class="wordmark" href="/" aria-label="Margin home">margin<span>.</span></a>
+    <p>Find the words. Review the change.</p>
+  </header>
+
+  <main>
+    <section class="intro">
+      <p class="eyebrow">A little room for revision</p>
+      <h1>Precise edits, one match at a time.</h1>
+      <p>Search a fictional contract, choose the right occurrence, and review before saving.</p>
+    </section>
+
+    <form id="search-form" class="search-bar">
+      <div>
+        <label for="document-filter">Search in</label>
+        <select id="document-filter" disabled>
+          <option value="">All documents</option>
+        </select>
+      </div>
+      <div class="query-field">
+        <label for="query">Exact phrase <span class="label-note">case-sensitive</span></label>
+        <input id="query" name="q" value="thirty (30) days" maxlength="1000" required disabled>
+      </div>
+      <button id="search-button" type="submit" disabled>Search</button>
+    </form>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <div class="workspace" id="workspace" aria-busy="false">
+      <section class="panel results-panel" aria-labelledby="results-heading">
+        <div class="panel-heading">
+          <h2 id="results-heading">Matches</h2>
+          <span class="step-label">01 / Select</span>
+        </div>
+        <p id="results-summary" class="muted">Search for a phrase to find its exact occurrences.</p>
+        <ol id="results" class="results"></ol>
+      </section>
+
+      <section class="panel" aria-labelledby="review-heading">
+        <div class="panel-heading">
+          <h2 id="review-heading">Review a change</h2>
+          <span class="step-label">02 / Review &amp; save</span>
+        </div>
+        <div id="review-empty" class="empty-state">
+          <span class="empty-mark" aria-hidden="true">Aa</span>
+          <h3>Start with a match</h3>
+          <p>Select an occurrence on the left. You’ll see the original wording beside your replacement.</p>
+        </div>
+
+        <form id="edit-form" hidden>
+          <p id="selection-title" class="selection-title"></p>
+          <div class="comparison">
+            <div>
+              <label for="original">Original selection</label>
+              <pre id="original" class="original" tabindex="0" aria-label="Original selection"></pre>
+            </div>
+            <div>
+              <label for="replacement">Proposed replacement</label>
+              <textarea id="replacement" rows="4" maxlength="10000" aria-describedby="deletion-note"></textarea>
+            </div>
+          </div>
+          <p id="deletion-note" class="deletion-note" hidden>An empty replacement will delete the selected text.</p>
+
+          <div class="ai-section">
+            <label for="instruction">Ask AI for wording <span class="label-note">optional</span></label>
+            <textarea id="instruction" rows="2" maxlength="1000" placeholder="e.g. Change this to sixty days, keeping the number format."></textarea>
+            <button id="suggest-button" type="button" class="secondary">Suggest wording</button>
+            <p class="muted small">Suggestions fill the replacement box. Review or edit the wording before saving.</p>
+          </div>
+          <div class="save-row">
+            <p class="muted small">Only this selected occurrence will change.</p>
+            <button id="save-button" type="submit">Save reviewed change</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <details id="document-preview" class="document-preview" hidden>
+      <summary id="document-heading">View document</summary>
+      <pre id="document-text"></pre>
+    </details>
+  </main>
+
+  <footer>Fictional demo documents · Changes reset when the app restarts.</footer>
+</body>
+</html>

@@ -51,6 +51,17 @@ def assert_error(response, status):
     assert isinstance(body["error"], str) and body["error"]
 
 
+def test_page_and_assets_are_served_without_exposing_project_files(client):
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "text/html" in page.headers["content-type"]
+    assert "<title>Margin</title>" in page.text
+    for path in ("/static/styles.css", "/static/app.js"):
+        assert client.get(path).status_code == 200
+    for path in ("/.env", "/static/.env", "/static/../.env"):
+        assert client.get(path).status_code == 404
+
+
 def test_list_and_read_documents(client):
     response = client.get("/documents")
     assert response.status_code == 200

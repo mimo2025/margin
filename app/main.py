@@ -1,8 +1,11 @@
 """HTTP boundary: validate requests, delegate to the store, serialize responses."""
 
+from pathlib import Path
+
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
 from app.core import DocumentError, validate_target
@@ -22,6 +25,8 @@ from app.sample_data import sample_documents
 from app.store import DocumentStore
 from app.suggestions import suggest_replacement
 
+STATIC_DIR = Path(__file__).parent / "static"
+
 
 def create_app(store: DocumentStore | None = None) -> FastAPI:
     # A factory gives every test its own state, without resetting global fixtures.
@@ -37,6 +42,11 @@ def create_app(store: DocumentStore | None = None) -> FastAPI:
             500: {"model": ErrorResponse},
         },
     )
+    api.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    @api.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
 
     @api.exception_handler(DocumentError)
     async def document_error(_request: Request, exc: DocumentError) -> JSONResponse:
