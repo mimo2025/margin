@@ -59,7 +59,9 @@ class DocumentStore:
         if not 1 <= limit <= MAX_RESULTS:
             raise DocumentError(f"Limit must be between 1 and {MAX_RESULTS}.", 422)
         if not 0 <= context_chars <= MAX_CONTEXT_CHARS:
-            raise DocumentError(f"Context must be between 0 and {MAX_CONTEXT_CHARS} characters.", 422)
+            raise DocumentError(
+                f"Context must be between 0 and {MAX_CONTEXT_CHARS} characters.", 422
+            )
 
         ids = [document_id] if document_id is not None else self._documents
         matches: list[SearchMatch] = []
@@ -77,7 +79,9 @@ class DocumentStore:
             current = self._documents[document_id]
             # Check version before validations that depend on the current content.
             if request.expected_version != current.version:
-                raise DocumentError("Document version has changed. Search again before saving.", 409)
+                raise DocumentError(
+                    "Document version has changed. Search again before saving.", 409
+                )
             updated_text = replace_target(current.text, request.target, request.replacement)
             updated = Document(
                 id=current.id,

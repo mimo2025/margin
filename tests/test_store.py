@@ -68,11 +68,15 @@ def test_edit_creates_new_snapshot_and_updates_search_version(store):
     [
         (edit_request(expected_version=2), 409),
         (
-            EditRequest(expected_version=1, target=Target(start=4, end=11, text="90 days"), replacement=""),
+            EditRequest(
+                expected_version=1, target=Target(start=4, end=11, text="90 days"), replacement=""
+            ),
             409,
         ),
         (
-            EditRequest(expected_version=1, target=Target(start=4, end=999, text="30 days"), replacement=""),
+            EditRequest(
+                expected_version=1, target=Target(start=4, end=999, text="30 days"), replacement=""
+            ),
             422,
         ),
     ],
